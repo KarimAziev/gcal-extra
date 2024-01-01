@@ -26,12 +26,12 @@ Additional commands for [[https://github.com/kidd/org-gcal.el][org-gcal]].
 ** With use-package and straight.el
 #+begin_src elisp :eval no
 (use-package gcal-extra
+  :hook (org-mode . gcal-extra-mode)
   :straight (gcal-extra
              :repo "KarimAziev/gcal-extra"
              :type git
              :host github)
-  :commands (gcal-extra-sync
-             gcal-extra-fetch))
+  :config (gcal-extra-setup))
 #+end_src
 
 ** Manual installation
