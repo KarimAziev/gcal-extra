@@ -6,7 +6,7 @@
 ;; URL: https://github.com/KarimAziev/gcal-extra
 ;; Version: 0.1.0
 ;; Keywords: convenience, tools
-;; Package-Requires: ((emacs "28.1") (org-gcal "0.4.2"))
+;; Package-Requires: ((emacs "28.1") (org-gcal "0.4.2") (transient "0.5.3"))
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
 ;; This file is NOT part of GNU Emacs.
@@ -35,6 +35,7 @@
 (defvar org-directory)
 
 (require 'org-gcal)
+(require 'transient)
 
 (defun gcal-extra--setup-pass-var (var)
   "Set variable VAR with password-store entry or user input.
@@ -75,11 +76,15 @@ entry."
                                                 entries)
                                            (symbol-name var))))
                                  (parsed (auth-source-pass-parse-entry
-                                          found))
-                                 (field (completing-read "Field: " parsed
-                                                         nil t)))
-                       (cdr (or (assoc field parsed)
-                                (assq (intern field) parsed)))))
+                                          found)))
+                       (if (length> parsed 1)
+                           (let ((str (completing-read
+                                       "Field: " parsed
+                                       nil t)))
+                             (cdr
+                              (or (assoc str parsed)
+                                  (assq (intern str) parsed))))
+                         (cdar parsed))))
                 (read-string (format "Value for `%s': " var)))))
     (when value
       (if (and (get var 'custom-type)
@@ -87,7 +92,7 @@ entry."
           (customize-save-variable var value "Saved by gcal-extra")
         (set-default var value)))))
 
-(defun gcal-extra-setup (&optional force)
+(defun gcal-extra-ensure (&optional force)
   "Configure Google Calendar integration for `org-gcal'.
 
 Optional argument FORCE is a boolean indicating whether to force the setup
@@ -96,6 +101,7 @@ process.
 Setup includes configuring variables `org-gcal-client-id',
 `org-gcal-client-secret', `oauth2-auto-additional-providers-alist',
 `org-gcal-fetch-file-alist'."
+  (require 'org)
   (let ((providers-should-update)
         (vars-alist '((org-gcal-client-id . client_id)
                       (org-gcal-client-secret . client_secret))))
@@ -103,20 +109,23 @@ Setup includes configuring variables `org-gcal-client-id',
       (when (boundp sym)
         (when (or force (not (symbol-value sym)))
           (gcal-extra--setup-pass-var sym))
-        (let ((provider
-               (cdr
-                (assq 'org-gcal
-                      oauth2-auto-additional-providers-alist)))
-              (value (symbol-value sym)))
+        (let* ((provider
+                (cdr
+                 (assq 'org-gcal
+                       oauth2-auto-additional-providers-alist)))
+               (value (symbol-value sym))
+               (stored-value (cdr (assq oauth-field provider))))
           (when (or (not provider)
-                    (not (equal (assq oauth-field provider)
+                    (not (equal stored-value
                                 value)))
             (setq providers-should-update t)))))
-    (when (and org-gcal-client-secret
-               org-gcal-client-id
-               providers-should-update)
-      (let ((providers (assq-delete-all 'org-gcal
-                                        oauth2-auto-additional-providers-alist)))
+    (when (and
+           org-gcal-client-secret
+           org-gcal-client-id
+           (or force providers-should-update))
+      (let
+          ((providers (assq-delete-all 'org-gcal
+                                       oauth2-auto-additional-providers-alist)))
         (setq providers (push `(org-gcal
                                 (authorize_url . "https://accounts.google.com/o/oauth2/auth")
                                 (token_url . "https://oauth2.googleapis.com/token")
@@ -127,7 +136,8 @@ Setup includes configuring variables `org-gcal-client-id',
         (customize-save-variable 'oauth2-auto-additional-providers-alist
                                  providers
                                  "Saved by gcal-extra"))))
-  (unless (bound-and-true-p org-gcal-fetch-file-alist)
+  (unless (and (not force)
+               (bound-and-true-p org-gcal-fetch-file-alist))
     (let* ((email (read-string "Google email for calendar: " user-mail-address))
            (file
             (read-file-name "File to store calendar events: "
@@ -140,24 +150,20 @@ Setup includes configuring variables `org-gcal-client-id',
                                "Saved by gcal-extra"))))
 
 ;;;###autoload
-(defun gcal-extra-fetch (&optional force)
-  "Setup `org-gcal' and Fetch Google Calendar events into Org mode.
+(defun gcal-extra-force-setup ()
+  "Force Google Calendar integration setup."
+  (interactive)
+  (gcal-extra-ensure t))
+
+;;;###autoload
+(defun gcal-extra-setup (&optional force)
+  "Initialize Google Calendar integration setup.
 
 Optional argument FORCE is a boolean indicating whether to force the setup
 process."
   (interactive "P")
-  (gcal-extra-setup force)
-  (org-gcal-fetch))
+  (gcal-extra-ensure force))
 
-;;;###autoload
-(defun gcal-extra-sync (&optional force)
-  "Setup `org-gcal' and synchronize Org agenda with Google Calendar.
-
-Optional argument FORCE is a boolean indicating whether to force the
-synchronization process."
-  (interactive "P")
-  (gcal-extra-setup force)
-  (org-gcal-sync))
 
 (defun gcal-extra--make-toggle-description (description value &optional on-label
                                                         off-label left-separator
@@ -199,9 +205,7 @@ OFF-LABEL. It has no default value."
 
 ;;;###autoload (autoload 'gcal-extra-menu "gcal-extra" nil t)
 (transient-define-prefix gcal-extra-menu ()
-  "Select and invoke an EasyPG command from a list of available commands."
-  :transient-suffix     #'transient--do-call
-  :transient-non-suffix #'transient--do-stay
+  "Define a menu for Google Calendar actions."
   :refresh-suffixes t
   [("D" "Delete entry at point to current calendar" org-gcal-delete-at-point
     :inapt-if-not gcal-extra--on-gcal-entry
@@ -210,8 +214,10 @@ OFF-LABEL. It has no default value."
     :inapt-if-not gcal-extra--on-gcal-entry
     :transient nil)]
   [("s" "Sync all events" org-gcal-sync
+    :inapt-if-non-nil org-gcal--sync-lock
     :transient nil)
-   ("y" "Sync buffer with Calendar (fetch and post)" org-gcal-sync-buffer
+   ("b" "Sync buffer with Calendar (fetch and post)" org-gcal-sync-buffer
+    :inapt-if-non-nil org-gcal--sync-lock
     :transient nil)
    ("f" "Fetch event data from google calendar" org-gcal-fetch
     :transient nil)
@@ -233,11 +239,16 @@ OFF-LABEL. It has no default value."
                                             org-gcal--sync-lock)
                                            "+"
                                            "" "[" "]"))
-    :inapt-if-nil org-gcal--sync-lock)
-   ("O" "Setup OAuth2 authentication after setting client id and secret"
-    org-gcal-reload-client-id-secret
-    :transient nil)
+    :inapt-if-nil org-gcal--sync-lock
+    :transient t)
    ("C" "Clear all Calendar api sync tokens" org-gcal-sync-tokens-clear
+    :inapt-if-nil org-gcal--sync-tokens
+    :transient t)
+   ("F" "Force setup"
+    gcal-extra-force-setup
+    :transient nil)
+   ("S" "Setup"
+    gcal-extra-setup
     :transient nil)])
 
 (defun gcal-extra--in-gcal-buffer ()
@@ -253,7 +264,6 @@ OFF-LABEL. It has no default value."
 
 (defun gcal-extra--on-gcal-entry ()
   "Check for Google Calendar managed property at point."
-  (require 'org-gcal nil t)
   (when (bound-and-true-p org-gcal-managed-property)
     (unless (bound-and-true-p org-gcal--sync-lock)
       (org-entry-get (point) org-gcal-managed-property))))
