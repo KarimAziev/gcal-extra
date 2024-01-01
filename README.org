@@ -1,0 +1,50 @@
+#+OPTIONS: ^:nil tags:nil num:nil
+
+* About
+
+Additional commands for [[https://github.com/kidd/org-gcal.el][org-gcal]].
+
+* Table of Contents                                       :TOC_2_gh:QUOTE:
+#+BEGIN_QUOTE
+- [[#about][About]]
+- [[#requirements][Requirements]]
+- [[#installation][Installation]]
+  - [[#with-use-package-and-straightel][With use-package and straight.el]]
+  - [[#manual-installation][Manual installation]]
+#+END_QUOTE
+
+* Requirements
+
+| Name     | Version |
+|----------+---------|
+| Emacs    |    28.1 |
+| [[https://github.com/kidd/org-gcal.el][org-gcal]] |   0.4.2 |
+
+
+* Installation
+
+** With use-package and straight.el
+#+begin_src elisp :eval no
+(use-package gcal-extra
+  :straight (gcal-extra
+             :repo "KarimAziev/gcal-extra"
+             :type git
+             :host github)
+  :commands (gcal-extra-sync
+             gcal-extra-fetch))
+#+end_src
+
+** Manual installation
+
+Download the source code and put it wherever you like, e.g. into =~/.emacs.d/gcal-extra/=
+
+#+begin_src shell :eval no
+git clone https://github.com/KarimAziev/gcal-extra.git ~/.emacs.d/gcal-extra/
+#+end_src
+
+Add the downloaded directory to the load path:
+
+#+begin_src elisp :eval no
+(add-to-list 'load-path "~/.emacs.d/gcal-extra/")
+(require 'gcal-extra)
+#+end_src
