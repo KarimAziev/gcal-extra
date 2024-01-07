@@ -274,6 +274,16 @@ OFF-LABEL. It has no default value."
              (gcal-extra--on-gcal-entry))
     (transient-setup #'gcal-extra-menu)))
 
+(defun gcal-extra-save-gcal-files (&rest _)
+  "Save buffers associated with Google Calendar files."
+  (pcase-dolist (`(,_k . ,file)
+                 org-gcal-fetch-file-alist)
+    (when-let ((buff (get-file-buffer file)))
+      (with-current-buffer buff
+        (save-buffer)))))
+
+
+
 ;;;###autoload
 (define-minor-mode gcal-extra-mode
   "Toggle Google Calendar menu in Org mode.
@@ -287,6 +297,50 @@ Toggle integration of Google Calendar with Org mode, adding a custom action to
   (when gcal-extra-mode
     (add-hook 'org-ctrl-c-ctrl-c-hook #'gcal-extra--invoke-menu nil
               'local)))
+
+(defvar gcal-extra--sync-timer nil "Timer for `gcal-extra-auto-sync-mode'.")
+
+(defcustom gcal-extra-auto-sync-interval 5
+  "Interval in seconds for `gcal-extra-auto-sync-mode'.
+If `gcal-extra-auto-sync-mode' is enabled, Emacs will save all
+buffers visiting a file to the visited file after it has been
+idle for `gcal-extra-auto-sync-interval' seconds."
+  :group 'gcal-extra
+  :type 'number
+  :set (lambda (symbol value)
+         (set-default symbol value)
+         (when gcal-extra--sync-timer
+           (timer-set-idle-time gcal-extra--sync-timer value :repeat))))
+
+(defun gcal-extra-should-auto-sync ()
+  "Check conditions for automatic Google Calendar synchronization."
+  (and
+   (not org-gcal--sync-lock)
+   (bound-and-true-p oauth2-auto-plstore)
+   (bound-and-true-p oauth2-auto-additional-providers-alist)
+   (bound-and-true-p org-gcal-fetch-file-alist)
+   (assq 'org-gcal oauth2-auto-additional-providers-alist)
+   (file-exists-p oauth2-auto-plstore)))
+
+(defun gcal-extra-sync-maybe ()
+  "Synchronize Google Calendar if not already syncing."
+  (when (gcal-extra-should-auto-sync)
+    (org-gcal-sync t t)))
+
+;;;###autoload
+(define-minor-mode gcal-extra-auto-sync-mode
+  "Toggle automatic Google Calendar synchronization.
+
+Automatically synchronize Google Calendar at regular intervals when Emacs is
+idle."
+  :group 'gcal-extra
+  :global t
+  (when gcal-extra--sync-timer (cancel-timer gcal-extra--sync-timer))
+  (setq gcal-extra--sync-timer
+        (when gcal-extra-auto-sync-mode
+          (run-with-idle-timer
+           gcal-extra-auto-sync-interval :repeat
+           #'gcal-extra-sync-maybe))))
 
 (provide 'gcal-extra)
 ;;; gcal-extra.el ends here
