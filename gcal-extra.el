@@ -282,7 +282,23 @@ OFF-LABEL. It has no default value."
       (with-current-buffer buff
         (save-buffer)))))
 
+(declare-function org-agenda-redo "org-agenda")
 
+(defun gcal-extra-revert-agendas ()
+  "Refresh all Org agenda buffers."
+  (dolist (buff (buffer-list))
+    (when (eq 'org-agenda-mode
+              (buffer-local-value 'major-mode buff))
+      (if (get-buffer-window buff)
+          (with-current-buffer buff
+            (with-selected-window (get-buffer-window buff)
+              (org-agenda-redo t)))
+        (with-current-buffer buff
+          (org-agenda-redo t))))))
+
+
+
+(defvar gcal-extra--org-agenda-timer nil)
 
 ;;;###autoload
 (define-minor-mode gcal-extra-mode
@@ -298,34 +314,37 @@ Toggle integration of Google Calendar with Org mode, adding a custom action to
     (add-hook 'org-ctrl-c-ctrl-c-hook #'gcal-extra--invoke-menu nil
               'local)))
 
-(defvar gcal-extra--sync-timer nil "Timer for `gcal-extra-auto-sync-mode'.")
-
-(defcustom gcal-extra-auto-sync-interval 5
-  "Interval in seconds for `gcal-extra-auto-sync-mode'.
-If `gcal-extra-auto-sync-mode' is enabled, Emacs will save all
-buffers visiting a file to the visited file after it has been
-idle for `gcal-extra-auto-sync-interval' seconds."
-  :group 'gcal-extra
-  :type 'number
-  :set (lambda (symbol value)
-         (set-default symbol value)
-         (when gcal-extra--sync-timer
-           (timer-set-idle-time gcal-extra--sync-timer value :repeat))))
 
 (defun gcal-extra-should-auto-sync ()
   "Check conditions for automatic Google Calendar synchronization."
   (and
    (not org-gcal--sync-lock)
+   (bound-and-true-p plstore-encrypt-to)
    (bound-and-true-p oauth2-auto-plstore)
    (bound-and-true-p oauth2-auto-additional-providers-alist)
    (bound-and-true-p org-gcal-fetch-file-alist)
    (assq 'org-gcal oauth2-auto-additional-providers-alist)
    (file-exists-p oauth2-auto-plstore)))
 
-(defun gcal-extra-sync-maybe ()
+(defun gcal-extra-setup-files-hooks ()
+  "Add save hook to buffers for reverting agendas."
+  (pcase-dolist (`(,_k . ,v) org-gcal-fetch-file-alist)
+    (unless (file-exists-p v)
+      (write-region "" nil v nil nil nil nil))
+    (with-current-buffer (find-file-noselect v)
+      (add-hook 'after-save-hook #'gcal-extra-revert-agendas nil t))))
+
+(defun gcal-extra-sync-maybe (&rest _)
   "Synchronize Google Calendar if not already syncing."
   (when (gcal-extra-should-auto-sync)
-    (org-gcal-sync t t)))
+    (gcal-extra-setup-files-hooks)
+    (let ((inhibit-message t))
+      (when (timerp gcal-extra--org-agenda-timer)
+        (cancel-timer gcal-extra--org-agenda-timer))
+      (setq gcal-extra--org-agenda-timer
+            (run-with-idle-timer
+             1 nil
+             #'org-gcal-sync t t)))))
 
 ;;;###autoload
 (define-minor-mode gcal-extra-auto-sync-mode
@@ -335,12 +354,12 @@ Automatically synchronize Google Calendar at regular intervals when Emacs is
 idle."
   :group 'gcal-extra
   :global t
-  (when gcal-extra--sync-timer (cancel-timer gcal-extra--sync-timer))
-  (setq gcal-extra--sync-timer
-        (when gcal-extra-auto-sync-mode
-          (run-with-idle-timer
-           gcal-extra-auto-sync-interval :repeat
-           #'gcal-extra-sync-maybe))))
+  (advice-remove 'org-agenda
+                 #'gcal-extra-sync-maybe)
+  (when gcal-extra-auto-sync-mode
+    (advice-add 'org-agenda
+                :before #'gcal-extra-sync-maybe)
+    (gcal-extra-sync-maybe)))
 
 (provide 'gcal-extra)
 ;;; gcal-extra.el ends here
