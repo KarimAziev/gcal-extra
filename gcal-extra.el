@@ -346,6 +346,22 @@ Toggle integration of Google Calendar with Org mode, adding a custom action to
              1 nil
              #'org-gcal-sync t t)))))
 
+(defun gcal-extra-agenda (&optional arg keys restriction)
+  "Sync Google Calendar and display Org agenda.
+
+Optional argument ARG is a prefix argument passed to `org-agenda'.
+
+Optional argument KEYS is a string or list of strings specifying agenda
+commands.
+
+Optional argument RESTRICTION is a symbol specifying the restriction lock for
+agenda."
+  (interactive "P")
+  (unless (symbol-value 'gcal-extra-auto-sync-mode)
+    (gcal-extra-sync-maybe))
+  (org-agenda arg keys restriction))
+
+
 ;;;###autoload
 (define-minor-mode gcal-extra-auto-sync-mode
   "Toggle automatic Google Calendar synchronization.
@@ -358,8 +374,7 @@ idle."
                  #'gcal-extra-sync-maybe)
   (when gcal-extra-auto-sync-mode
     (advice-add 'org-agenda
-                :before #'gcal-extra-sync-maybe)
-    (gcal-extra-sync-maybe)))
+                :before #'gcal-extra-sync-maybe)))
 
 (provide 'gcal-extra)
 ;;; gcal-extra.el ends here
