@@ -308,7 +308,7 @@ Toggle integration of Google Calendar with Org mode, adding a custom action to
 `\\[org-ctrl-c-ctrl-c]' command on calendar entries."
   :lighter " gcal-extra-menu"
   :global nil
-  (remove-hook 'org-ctrl-c-ctrl-c-final-hook #'gcal-extra--invoke-menu
+  (remove-hook 'org-ctrl-c-ctrl-c-hook #'gcal-extra--invoke-menu
                'local)
   (when gcal-extra-mode
     (add-hook 'org-ctrl-c-ctrl-c-hook #'gcal-extra--invoke-menu nil
