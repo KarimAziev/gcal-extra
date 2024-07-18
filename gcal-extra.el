@@ -271,7 +271,9 @@ OFF-LABEL. It has no default value."
 (defun gcal-extra--invoke-menu ()
   "Display Google Calendar menu for valid entries."
   (when (and (gcal-extra--in-gcal-buffer)
-             (gcal-extra--on-gcal-entry))
+             (gcal-extra--on-gcal-entry)
+             (eq (org-element-type (org-element-at-point))
+                 'node-property))
     (transient-setup #'gcal-extra-menu)))
 
 (defun gcal-extra-save-gcal-files (&rest _)
