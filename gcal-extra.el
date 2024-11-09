@@ -253,7 +253,7 @@ OFF-LABEL. It has no default value."
 
 (defun gcal-extra--in-gcal-buffer ()
   "Check if current buffer is associated with a Google Calendar file."
-  (when-let ((file buffer-file-name))
+  (when-let* ((file buffer-file-name))
     (seq-find (pcase-lambda (`(,_k . ,gcal-file))
                 (and gcal-file
                      (string=
@@ -280,7 +280,7 @@ OFF-LABEL. It has no default value."
   "Save buffers associated with Google Calendar files."
   (pcase-dolist (`(,_k . ,file)
                  org-gcal-fetch-file-alist)
-    (when-let ((buff (get-file-buffer file)))
+    (when-let* ((buff (get-file-buffer file)))
       (with-current-buffer buff
         (save-buffer)))))
 
